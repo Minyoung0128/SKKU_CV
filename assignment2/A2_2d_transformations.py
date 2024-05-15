@@ -25,24 +25,39 @@ def get_transformed_image(img, M):
 
     result = np.ones((801, 801), dtype=np.uint8) * 255
 
-    center = [400, 400]
+    center_x = 400
+    center_y = 400
+
+    # center 변하는거도 맞춰줘야 함
+
+    dim3_vect = [0,0,1]
+    center_x, center_y, k = np.dot(M, dim3_vect)
+
+    center_x = round(center_x) + 400
+    center_y = round(center_y) + 400
 
     # transformation
     x, y = img.shape
-    x_offset = center[0] - x // 2
-    y_offset = center[1] - y // 2
 
-    for j in range(x):
-        for i in range(y):
-            # nx = M[0, 0] * i + M[0, 1] * j + M[0, 2] + x_offset + x_center
-            # ny = M[1, 0] * i + M[1, 1] * j + M[1, 2] + y_offset + y_center
-            nx = M[0, 0] * i + M[0, 1] * j + M[0, 2] + x_offset
-            ny = M[1, 0] * i + M[1, 1] * j + M[1, 2] + y_offset
-            
-            if 0 < nx < 801 and 0 < ny < 801:
-                nx = int(nx)
-                ny = int(ny)
-                result[ny, nx] = img[j][i]
+    x_half = x // 2
+    y_half = y // 2
+
+    x_offset = center_x - x_half
+    y_offset = center_y - y_half
+    
+    for i in range(x_offset, center_x + x_half + 1):
+        for j in range(y_offset, center_y + y_half +1):
+            dim3_v = np.array([i - center_x, j - center_y, 1])
+            nx, ny,_ = np.dot(M, dim3_v)
+
+            nx = round(nx)
+            ny = round(ny)
+
+            nx += center_x
+            ny += center_y
+
+            if img[i - x_offset][j - y_offset] < 255:
+                    result[nx][ny] = img[i - x_offset][j - y_offset]
 
     return result
 
@@ -76,71 +91,80 @@ def get_transformation_matrix(type):
         # Rotate counter-clockwise by 5 degrees
         a = np.cos(np.radians(5))
         b = np.sin(np.radians(5))
-        result = np.float32([[a ,b ,((1-a)-b)*400],
-                             [-b, a, (b + (1 - a))*400],
+        # result = np.float32([[a , -b ,((1-a)-b)*400],
+        #                      [b, a, (b + (1 - a))*400],
+        #                      [0,0,1]])
+        result = np.float32([[a , -b ,0],
+                             [b, a, 0],
                              [0,0,1]])
-    
     elif type == 't':
         # Rotate clockwise by 5 degrees
         a = np.cos(np.radians(-5))
         b = np.sin(np.radians(-5))
-        result = np.float32([[a ,b ,((1-a)-b)*400],
-                             [-b, a, (b + (1 - a))*400],
+        result = np.float32([[a ,b ,0],
+                             [-b, a, 0],
                              [0,0,1]])
         
     elif type == 'f':
-        # Flip across y axis
-        result = np.float32([[-1, 0, 800],
+        # # Flip across y axis
+        # result = np.float32([[-1, 0, 800],
+        #                      [0, 1, 0],
+        #                      [0, 0, 1]])
+        result = np.float32([[1, 0, 0],
+                             [0, -1, 0],
+                             [0, 0, 1]])
+        
+    elif type == 'g':
+        # # Flip across x axis
+        # result = np.float32([[1, 0, 0],
+        #                      [0, -1, 800],
+        #                      [0, 0, 1]])
+        
+        result = np.float32([[-1, 0, 0],
                              [0, 1, 0],
                              [0, 0, 1]])
-
-    elif type == 'g':
-        # Flip across x axis
-        result = np.float32([[1, 0, 0],
-                             [0, -1, 800],
-                             [0, 0, 1]])
-    
+        
     elif type == 'x':
         # Shirnk the size by 5% along to x direction 
-        result = np.float32([[0.95, 0, 0.05 * 400],
+        result = np.float32([[0.95, 0, 0],
                              [0, 1, 0],
                              [0, 0, 1]])
     
     elif type == 'c': 
         # Enlarge the size by 5% along to x direction
-        result = np.float32([[1.05, 0, -0.05*400],
+        result = np.float32([[1.05, 0, 0],
                              [0, 1, 0],
                              [0, 0, 1]])
         
     elif type == 'y':
         # Shirnk the size by 5% along to y direction 
         result = np.float32([[1, 0, 0],
-                             [0, 0.95, 0.05 * 400],
+                             [0, 0.95, 0],
                              [0, 0, 1]])
     
     elif type == 'u': 
         # Enlarge the size by 5% along to y direction
         result = np.float32([[1, 0, 0],
-                             [0, 1.05,  -0.05*400],
+                             [0, 1.05,0],
                              [0, 0, 1]])
-
+    # print(result)
     return result
         
 def interactive_2D_transformation(img):
 
-    key = ""
-    
     init_matrix = np.float32([[1, 0, 0],
                              [0, 1, 0],
                              [0, 0, 1]])
     
     init_img = get_transformed_image(img, init_matrix)
+    arrowed_image = draw_arrow_line(init_img,801,[400,400])
 
     img = init_img
 
-    while True:
-        key = keyboard.read_key()
+    cv2.imshow("ORB",arrowed_image)
 
+    while True:
+        key = chr(cv2.waitKey())
         print("You press", key)
         if key == "q":
             break
@@ -156,9 +180,10 @@ def interactive_2D_transformation(img):
 
         arrowed_image = draw_arrow_line(img,801,[400,400])
 
-        cv2.imshow('Transformed Image',arrowed_image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        # cv2.imshow('Transformed Image',arrowed_image)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        cv2.imshow("ORB",arrowed_image)
 
     return img
 

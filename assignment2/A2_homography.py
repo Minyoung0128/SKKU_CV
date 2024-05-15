@@ -259,8 +259,15 @@ def image_stitch(img1, img2):
     
 
 if __name__ == "__main__":
-    imageA = cv2.imread('CV_Assignment_2_Images\cv_cover.jpg',cv2.IMREAD_GRAYSCALE)
-    imageB = cv2.imread('CV_Assignment_2_Images\cv_desk.png',cv2.IMREAD_GRAYSCALE)
+    imageA = cv2.imread('CV_Assignment_2_Images/cv_cover.jpg',cv2.IMREAD_GRAYSCALE)
+    imageB = cv2.imread('CV_Assignment_2_Images/cv_desk.png',cv2.IMREAD_GRAYSCALE)
+    
+    cv2.imshow('result1', imageA)
+    cv2.imshow('result2', imageB)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
     
     match, srcP, destP = show_match_pair(imageA, imageB)
 
