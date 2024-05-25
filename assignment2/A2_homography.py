@@ -2,52 +2,13 @@ import cv2
 import numpy as np
 from numpy import sqrt
 import time
-import keyboard
-import copy
-import math
-import random
-def find_x_y_cor(src1, src2):
-    size_n = 35
-
-    m_a = np.zeros((size_n, 2))
-    m_b = np.zeros((size_n, 2))
-    orb = cv2.ORB_create()
-
-    kp1 = orb.detect(src1, None)
-    kp1, des1 = orb.compute(src1, kp1)
-
-    kp2 = orb.detect(src2, None)
-    kp2, des2 = orb.compute(src2, kp2)
-
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(des1, des2)
-
-    dic = {}
-    dic_list = []
-
-    # list 자료형 matches
-    # matches 인스턴스의 attribute 인 distance 길이를 기준으로 정렬
-    matches = sorted(matches, key=lambda x: x.distance)
-
-    for i in range(size_n):
-        dic = {'src': matches[i].queryIdx, 'des': matches[i].trainIdx}
-        dic_list.append(dic)
-    i = 0
-    for dic in dic_list:
-        m_a[i][0] = kp1[dic['src']].pt[0]
-        m_a[i][1] = kp1[dic['src']].pt[1]
-        m_b[i][0] = kp2[dic['des']].pt[0]
-        m_b[i][1] = kp2[dic['des']].pt[1]
-
-        # print(m_b[i][0])
-        i += 1
-    return m_a, m_b
-
 def get_orb(img):
     # Initialize ORB detector
     orb = cv2.ORB_create()
 
-    return orb.detectAndCompute(img, None)
+    result = orb.detectAndCompute(img, None)
+    # print("ORB detected")
+    return result 
 
 def hammingDistance(a, b):
     r = (1 << np.arange(8))[:,None]
@@ -64,12 +25,12 @@ def find_best_match(des1, des2):
         best_idx = -1
         best_dist = np.Inf
 
-        for j in range(des2.shape[0]):
+        for j in range(des2.shape[0]): 
             d1 = des1[i]
             d2 = des2[j]
 
-            # dist = hammingDistance(d1,d2)
-            dist = cv2.norm(d1,d2,cv2.NORM_HAMMING)
+            dist = hammingDistance(d1,d2)
+            # dist = cv2.norm(d1,d2,cv2.NORM_HAMMING)
 
             if best_dist > dist:
                 best_dist = dist
@@ -148,15 +109,10 @@ def compute_normalize_homography(norm_src, norm_dest):
     # print(A)
     _,_,V = np.linalg.svd(A)
     H_norm = V[-1].reshape(3,3)
-    return H_norm/H_norm[-1][-1]
+    scale = 0 if H_norm[-1,-1] == 0 else 1e-10
+    return H_norm/(H_norm[-1,-1]+scale)
 
 def compute_homography(srcP, destP):
-
-    # print(cv2.findHomography(srcP, destP, cv2.LMEDS))
-    answ_h,_= cv2.findHomography(srcP, destP, 0)
-    # print("Answer")
-    # print(answ_h)
-    # Normalize feature point
     norm_srcP, T_src = normalize(srcP)
     norm_destP, T_dest = normalize(destP)
 
@@ -164,13 +120,8 @@ def compute_homography(srcP, destP):
     
     # print(H_norm.shape)
     H = np.dot(np.dot(np.linalg.inv(T_dest),H_norm),T_src)
-    # print("Before normalize")
-    # print(H)
-    # print(H /H[-1,-1])
+    
     return H /H[-1,-1]
-    # print(H)
-    # return H
-    # return answ_h
 
 def get_dist(p1, p2, H):
     p1 = np.array([[p1[0], p1[1], 1]])
@@ -183,20 +134,12 @@ def get_dist(p1, p2, H):
 
     return np.linalg.norm(error)
 
-def wrap_image(source_img, destination_img, H):
-    # cv2.warpPerspective를 사용하여 래핑
-    h, w = destination_img.shape
-    warped_img = cv2.warpPerspective(source_img, H, (w, h))
-
-    # 래핑된 이미지를 cv_desk.png와 합성
-    composed_img = cv2.addWeighted(destination_img, 0.5, warped_img, 0.5, 0)
-
-    return warped_img, composed_img
 
 def compute_homography_ransac(srcP, destP, th):
     
     max_inliers = []
     finalH = None
+    np.random.seed(53)
 
     start = time.time()
     while(True):
@@ -231,6 +174,33 @@ def compute_homography_ransac(srcP, destP, th):
 
     return finalH            
 
+def crop_black(stitched_img, original_img, zero_count = 10):
+    h, w = np.shape(stitched_img)
+    row_limit , col_limit = np.shape(original_img)
+    high_limit_row = 0
+    for row in range(row_limit):
+        current_limit = high_limit_row
+        for col in range(col_limit+ 100):
+            # print(row, col, img[:row, col])
+            if np.all(stitched_img[:row, col] == 0):
+                # print("Highlimitrow",row, col , stitched_img [:row, col])
+                high_limit_row += 1
+                break
+        if(current_limit == high_limit_row):
+            # high limit update 안된거
+            break
+    
+    # print("High Limit row", high_limit_row)
+
+    limit_col = w
+    for col in range(w - 1, zero_count - 2, -1): 
+        for row in range(high_limit_row,h):
+            if np.all(stitched_img[row, col-zero_count+1:col+1] == 0):
+                limit_col = min(limit_col, col - zero_count + 1)
+
+    return stitched_img[high_limit_row:,:limit_col]
+
+
 def image_stitch(img1, img2):
     kp1, des1 = get_orb(img1)
     kp2, des2 = get_orb(img2)
@@ -240,41 +210,44 @@ def image_stitch(img1, img2):
 
     H = compute_homography_ransac(srcP, destP, 1)
 
-    result = cv2.warpPerspective(img1, H, (img1.shape[1] + img2.shape[1], img1.shape[0]))
-    # cv2.imshow('warped', result)
-    result[0: img1.shape[0], 0: img2.shape[1]] = img2
+    h_desk, w_desk = np.shape(img2)
+    # 이미지 블렌딩 없이 합치기
+    result = cv2.warpPerspective(img1, H, (w_desk+400, h_desk))
 
-    # image blending
-    # dst = result[0:imageB.shape[0], imageB.shape[1] - 5: imageB.shape[1] + 5]
-    for i in range(10):
-        tmp1 = result[0:img2.shape[0], img2.shape[1] - i]
-        tmp2 = result[0:img2.shape[0], img2.shape[1] + i]
-        result[0:img2.shape[0], img2.shape[1] - i: img2.shape[1] - i + 1 ] = cv2.addWeighted(tmp1, 0.7, tmp2, 0.3, 0)
-        result[0:img2.shape[0], img2.shape[1] + i: img2.shape[1] + i + 1] = cv2.addWeighted(tmp1, 0.3, tmp2, 0.7, 0)
+    result[0:h_desk,0:w_desk] = np.copy(img2)
+    result_withcrop = crop_black(result, img2)
+    # cv2.imshow("Result Without Blending", result)
+    cv2.imshow("Result Without Blending_cropped", result_withcrop)
 
+    # # image blending
 
-    cv2.imshow('blur_result', result)
+    blending2 = cv2.warpPerspective(img1, H, (w_desk+400, h_desk))
+    blending1 = np.zeros((h_desk,w_desk + 400),dtype=float)
+    blending1[0:h_desk,0:w_desk] = np.copy(img2)
+
+    for i in range(0,h_desk):
+        alpha = 1
+        for j in range(1024-100,1024):
+            alpha -= 0.01
+            result[i][j] = alpha * blending1[i][j] + (1-alpha) * blending2[i][j]
+            
+    result_withcrop_blended = crop_black(result, img2)
+
+    cv2.imshow('blur_result', result_withcrop_blended)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
     
 
 if __name__ == "__main__":
-    imageA = cv2.imread('CV_Assignment_2_Images/cv_cover.jpg',cv2.IMREAD_GRAYSCALE)
-    imageB = cv2.imread('CV_Assignment_2_Images/cv_desk.png',cv2.IMREAD_GRAYSCALE)
-    
-    cv2.imshow('result1', imageA)
-    cv2.imshow('result2', imageB)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-
+    imageA = cv2.imread('CV_Assignment_2_Images\cv_cover.jpg',cv2.IMREAD_GRAYSCALE)
+    imageB = cv2.imread('CV_Assignment_2_Images\cv_desk.png',cv2.IMREAD_GRAYSCALE)
     
     match, srcP, destP = show_match_pair(imageA, imageB)
 
     H = compute_homography(srcP, destP)
     H_RANSAC = compute_homography_ransac(srcP,destP, 5)
 
-    print(H_RANSAC)
+    # print(H_RANSAC)
 
     result1 = cv2.warpPerspective(imageA, H, (imageB.shape[1], imageB.shape[0]))
     result2 = cv2.warpPerspective(imageA, H, (imageB.shape[1], imageB.shape[0]))
